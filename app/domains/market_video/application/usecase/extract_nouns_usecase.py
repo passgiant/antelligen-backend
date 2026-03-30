@@ -27,7 +27,8 @@ class ExtractNounsUseCase:
             nouns = self._analyzer.extract_nouns(comment.content)
             all_nouns.extend(nouns)
 
-        frequencies = NounExtractor.count_frequencies(all_nouns)
+        merged_nouns = NounExtractor.merge_synonyms(all_nouns)
+        frequencies = NounExtractor.count_frequencies(merged_nouns)
         all_items = [NounFrequencyItem(noun=noun, count=count) for noun, count in frequencies]
         top_items = all_items[:top_n]
 
