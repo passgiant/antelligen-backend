@@ -5,6 +5,9 @@ from app.common.response.base_response import BaseResponse
 from app.domains.stock.adapter.outbound.external.opendart_financial_data_provider import (
     OpenDartFinancialDataProvider,
 )
+from app.domains.stock.adapter.outbound.external.openai_stock_embedding_generator import (
+    OpenAIStockEmbeddingGenerator,
+)
 from app.domains.stock.adapter.outbound.external.serp_stock_data_collector import (
     SerpStockDataCollector,
 )
@@ -29,9 +32,6 @@ from app.domains.stock.application.usecase.fetch_dart_financial_ratios_usecase i
 )
 from app.domains.stock.infrastructure.mapper.serp_stock_data_standardizer import (
     SerpStockDataStandardizer,
-)
-from app.domains.stock.infrastructure.mapper.deterministic_stock_embedding_generator import (
-    DeterministicStockEmbeddingGenerator,
 )
 from app.domains.stock.infrastructure.mapper.simple_stock_document_chunker import (
     SimpleStockDocumentChunker,
@@ -76,7 +76,10 @@ async def collect_stock_data(ticker: str):
         stock_data_collector=SerpStockDataCollector(api_key=settings.serp_api_key),
         stock_data_standardizer=SerpStockDataStandardizer(),
         stock_document_chunker=SimpleStockDocumentChunker(),
-        stock_embedding_generator=DeterministicStockEmbeddingGenerator(),
+        stock_embedding_generator=OpenAIStockEmbeddingGenerator(
+            api_key=settings.openai_api_key,
+            model=settings.openai_embedding_model,
+        ),
         stock_vector_repository=vector_repository,
         dart_financial_ratios_usecase=dart_financial_ratios_usecase,
     )

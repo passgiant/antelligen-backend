@@ -44,6 +44,7 @@ class Settings(BaseSettings):
     analysis_api_finance_url: Optional[str] = None
     analysis_api_timeout_seconds: float = 10.0
     openai_finance_agent_model: str = "gpt-5-mini"
+    openai_embedding_model: str = "text-embedding-3-small"
 
     dart_api_key: str = ""
 
