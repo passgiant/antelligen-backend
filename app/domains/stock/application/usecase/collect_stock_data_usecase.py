@@ -18,11 +18,15 @@ from app.domains.stock.application.port.stock_data_standardizer import (
 from app.domains.stock.application.response.stock_collection_response import (
     StockBasicInformationResponse,
     StockCollectionResponse,
+    StockDartFinancialRatioResponse,
     StockDocumentChunkResponse,
     StockIngestionReadyDataResponse,
     StockCollectionMetadataResponse,
     StockFinancialInformationResponse,
     StockVectorStoreResultResponse,
+)
+from app.domains.stock.application.usecase.fetch_dart_financial_ratios_usecase import (
+    FetchDartFinancialRatiosUseCase,
 )
 from app.domains.stock.domain.entity.stock_vector_document import StockVectorDocument
 
@@ -38,6 +42,7 @@ class CollectStockDataUseCase:
         stock_document_chunker: StockDocumentChunker,
         stock_embedding_generator: StockEmbeddingGenerator,
         stock_vector_repository: StockVectorRepository,
+        dart_financial_ratios_usecase: FetchDartFinancialRatiosUseCase | None = None,
     ):
         self._stock_repository = stock_repository
         self._stock_data_collector = stock_data_collector
@@ -45,6 +50,7 @@ class CollectStockDataUseCase:
         self._stock_document_chunker = stock_document_chunker
         self._stock_embedding_generator = stock_embedding_generator
         self._stock_vector_repository = stock_vector_repository
+        self._dart_financial_ratios_usecase = dart_financial_ratios_usecase
 
     async def execute(self, ticker: str) -> StockCollectionResponse:
         stock = await self._stock_repository.find_by_ticker(ticker)
@@ -68,7 +74,42 @@ class CollectStockDataUseCase:
                 message=f"Unable to collect stock data from external source: {ticker}",
             )
 
-        collected_data = self._stock_data_standardizer.standardize(raw_data)
+        # DART 재무비율 조회 (표준화 전에 수행하여 document_text에 포함)
+        dart_roe = None
+        dart_roa = None
+        dart_debt_ratio = None
+        dart_fiscal_year = None
+        if self._dart_financial_ratios_usecase:
+            try:
+                dart_result = await self._dart_financial_ratios_usecase.execute(
+                    ticker=stock.ticker
+                )
+                if dart_result:
+                    dart_roe = dart_result.roe
+                    dart_roa = dart_result.roa
+                    dart_debt_ratio = dart_result.debt_ratio
+                    dart_fiscal_year = dart_result.fiscal_year
+                    logger.info(
+                        "[Stock Collect] DART 재무비율 조회 성공 - ticker=%s roe=%s roa=%s debt_ratio=%s",
+                        stock.ticker,
+                        dart_roe,
+                        dart_roa,
+                        dart_debt_ratio,
+                    )
+            except Exception as e:
+                logger.warning(
+                    "[Stock Collect] DART 재무비율 조회 실패 - ticker=%s error=%s",
+                    stock.ticker,
+                    str(e),
+                )
+
+        collected_data = self._stock_data_standardizer.standardize(
+            raw_data,
+            dart_roe=dart_roe,
+            dart_roa=dart_roa,
+            dart_debt_ratio=dart_debt_ratio,
+            dart_fiscal_year=dart_fiscal_year,
+        )
         if collected_data is None:
             logger.error(
                 "[Stock Collect] Standardization failed - ticker=%s source=%s",
@@ -164,6 +205,16 @@ class CollectStockDataUseCase:
                 for chunk in chunk_entities
             ]
 
+        # DART 재무비율 응답 (이미 조회하여 document_text에 포함됨)
+        dart_financial_ratios = None
+        if collected_data.dart_roe is not None or collected_data.dart_roa is not None or collected_data.dart_debt_ratio is not None:
+            dart_financial_ratios = StockDartFinancialRatioResponse(
+                roe=collected_data.dart_roe,
+                roa=collected_data.dart_roa,
+                debt_ratio=collected_data.dart_debt_ratio,
+                fiscal_year=collected_data.dart_fiscal_year,
+            )
+
         return StockCollectionResponse(
             ticker=collected_data.ticker,
             stock_name=collected_data.stock_name,
@@ -187,6 +238,7 @@ class CollectStockDataUseCase:
             ),
             basic_information=basic_information,
             financial_information=financial_information,
+            dart_financial_ratios=dart_financial_ratios,
             document_text=collected_data.document_text,
             document_chunks=document_chunks,
             vector_store_result=vector_store_result,

@@ -1,8 +1,12 @@
-from fastapi import APIRouter, Header
+import redis.asyncio as aioredis
+from fastapi import APIRouter, Depends
 
 from app.common.response.base_response import BaseResponse
-from app.domains.agent.adapter.outbound.external.http_analysis_request_client import (
-    HttpAnalysisRequestClient,
+from app.domains.agent.adapter.outbound.cache.redis_finance_analysis_cache import (
+    RedisFinanceAnalysisCache,
+)
+from app.domains.agent.adapter.outbound.external.langgraph_finance_agent_provider import (
+    LangGraphFinanceAgentProvider,
 )
 from app.domains.agent.adapter.outbound.external.mock_sub_agent_provider import (
     MockSubAgentProvider,
@@ -14,12 +18,22 @@ from app.domains.agent.application.request.finance_analysis_request import (
 from app.domains.agent.application.response.frontend_agent_response import (
     FrontendAgentResponse,
 )
-from app.domains.agent.application.usecase.request_finance_analysis_usecase import (
-    RequestFinanceAnalysisUseCase,
+from app.domains.agent.application.usecase.analyze_finance_agent_usecase import (
+    AnalyzeFinanceAgentUseCase,
 )
 from app.domains.agent.application.usecase.process_agent_query_usecase import (
     ProcessAgentQueryUseCase,
 )
+from app.domains.stock.adapter.outbound.persistence.stock_repository_impl import (
+    StockRepositoryImpl,
+)
+from app.domains.stock.adapter.outbound.persistence.stock_vector_repository_impl import (
+    StockVectorRepositoryImpl,
+)
+from app.domains.stock.application.usecase.get_stored_stock_data_usecase import (
+    GetStoredStockDataUseCase,
+)
+from app.infrastructure.cache.redis_client import get_redis
 from app.infrastructure.config.settings import get_settings
 
 router = APIRouter(prefix="/agent", tags=["Agent"])
@@ -45,13 +59,42 @@ async def query_agent(request: AgentQueryRequest):
 )
 async def analyze_finance(
     request: FinanceAnalysisRequest,
-    authorization: str | None = Header(default=None),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
+    """
+    벡터 DB에 저장된 데이터를 기반으로 재무 분석을 수행합니다.
+    먼저 /stock/{ticker}/collect로 데이터를 적재해야 합니다.
+    """
     settings = get_settings()
-    client = HttpAnalysisRequestClient(
-        finance_analysis_url=settings.analysis_api_finance_url,
-        timeout_seconds=settings.analysis_api_timeout_seconds,
+    stock_repository = StockRepositoryImpl()
+    stock_vector_repository = StockVectorRepositoryImpl()
+
+    # 저장된 데이터 조회 UseCase
+    get_stored_stock_data_usecase = GetStoredStockDataUseCase(
+        stock_repository=stock_repository,
+        stock_vector_repository=stock_vector_repository,
     )
-    usecase = RequestFinanceAnalysisUseCase(client)
-    result = await usecase.execute(request=request, authorization=authorization)
-    return BaseResponse.ok(data=result)
+
+    finance_provider = LangGraphFinanceAgentProvider(
+        api_key=settings.openai_api_key,
+        chat_model=settings.openai_finance_agent_model,
+        embedding_model=settings.openai_embedding_model,
+        top_k=settings.finance_rag_top_k,
+        langsmith_tracing=settings.langsmith_tracing,
+        langsmith_api_key=settings.langsmith_api_key,
+        langsmith_project=settings.langsmith_project,
+        langsmith_endpoint=settings.langsmith_endpoint,
+    )
+
+    usecase = AnalyzeFinanceAgentUseCase(
+        stock_repository=stock_repository,
+        get_stored_stock_data_usecase=get_stored_stock_data_usecase,
+        finance_agent_provider=finance_provider,
+        finance_analysis_cache=RedisFinanceAnalysisCache(
+            redis=redis,
+            ttl_seconds=settings.finance_analysis_cache_ttl_seconds,
+        ),
+    )
+    internal_result = await usecase.execute(request)
+    frontend_result = FrontendAgentResponse.from_internal(internal_result)
+    return BaseResponse.ok(data=frontend_result)
