@@ -5,11 +5,6 @@ from pydantic_settings import BaseSettings
 
 
 class Settings(BaseSettings):
-    mysql_user: str
-    mysql_password: str
-    mysql_host: str
-    mysql_port: int
-    mysql_schema: str
     postgres_user: str
     postgres_password: str
     postgres_host: str
@@ -40,6 +35,12 @@ class Settings(BaseSettings):
 
     kakao_client_id: str
     kakao_redirect_uri: str
+
+    open_dart_api_key: str = ""
+
+    langchain_api_key: str = ""
+    langchain_project: str = "disclosure-analysis"
+    langchain_tracing_v2: bool = False
 
     analysis_api_finance_url: Optional[str] = None
     analysis_api_timeout_seconds: float = 10.0
