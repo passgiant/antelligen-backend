@@ -58,12 +58,17 @@ async def lifespan(application: FastAPI):
         await SeedStockThemesUseCase(StockThemeRepositoryImpl(session)).execute()
 
     # Bootstrap initial data (runs only when companies table is empty)
-    from app.infrastructure.scheduler.disclosure_jobs import job_bootstrap
+    from app.infrastructure.scheduler.disclosure_jobs import job_bootstrap, job_collect_news
 
     try:
         await job_bootstrap()
     except Exception as e:
         logging.getLogger(__name__).error("Bootstrap failed (server continues normally): %s", str(e))
+
+    try:
+        await job_collect_news()
+    except Exception as e:
+        logging.getLogger(__name__).error("News bootstrap failed (server continues normally): %s", str(e))
 
     from app.infrastructure.scheduler.disclosure_scheduler import create_disclosure_scheduler
 

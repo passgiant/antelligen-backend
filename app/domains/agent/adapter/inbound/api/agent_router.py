@@ -1,7 +1,10 @@
+from typing import Optional
+
 import redis.asyncio as aioredis
-from fastapi import APIRouter, Depends, Query
+from fastapi import APIRouter, Cookie, Depends, Header, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.common.exception.app_exception import AppException
 from app.common.response.base_response import BaseResponse
 from app.domains.agent.adapter.outbound.cache.redis_finance_analysis_cache import (
     RedisFinanceAnalysisCache,
@@ -53,7 +56,25 @@ from app.infrastructure.cache.redis_client import get_redis
 from app.infrastructure.config.settings import get_settings
 from app.infrastructure.database.database import get_db
 
+SESSION_KEY_PREFIX = "session:"
+
 router = APIRouter(prefix="/agent", tags=["Agent"])
+
+
+async def _require_auth(request: Request, redis: aioredis.Redis) -> None:
+    """쿼리 파라미터 → 쿠키 → Authorization 헤더 순으로 토큰을 확인합니다."""
+    token = (
+        request.query_params.get("token")
+        or request.cookies.get("user_token")
+        or (
+            request.headers.get("authorization", "").removeprefix("Bearer ").strip()
+            or None
+        )
+    )
+    if not token:
+        raise AppException(status_code=401, message="인증이 필요합니다.")
+    if not await redis.get(f"{SESSION_KEY_PREFIX}{token}"):
+        raise AppException(status_code=401, message="세션이 만료되었거나 유효하지 않습니다.")
 
 
 @router.post(
@@ -62,21 +83,25 @@ router = APIRouter(prefix="/agent", tags=["Agent"])
     status_code=200,
 )
 async def query_agent(
-    request: AgentQueryRequest,
+    request: Request,
+    body: AgentQueryRequest,
     db: AsyncSession = Depends(get_db),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
+    await _require_auth(request, redis)
+
     settings = get_settings()
     repository = IntegratedAnalysisRepositoryImpl(db)
     llm_synthesis = OpenAISynthesisClient(api_key=settings.openai_api_key)
 
     usecase = ProcessAgentQueryUseCase(
-        news_agent=NewsSubAgentAdapter(),
+        news_agent=NewsSubAgentAdapter(db=db, api_key=settings.openai_api_key),
         disclosure_agent=DisclosureSubAgentAdapter(),
         finance_agent=FinanceSubAgentAdapter(),
         llm_synthesis=llm_synthesis,
         repository=repository,
     )
-    internal_result = await usecase.execute(request)
+    internal_result = await usecase.execute(body)
     frontend_result = FrontendAgentResponse.from_internal(internal_result)
     return BaseResponse.ok(data=frontend_result)
 
@@ -87,11 +112,15 @@ async def query_agent(
     status_code=200,
 )
 async def get_analysis_history(
+    request: Request,
     ticker: str = Query(..., description="종목 코드 (예: 005930)"),
     limit: int = Query(default=10, ge=1, le=50),
     db: AsyncSession = Depends(get_db),
+    redis: aioredis.Redis = Depends(get_redis),
 ):
     """ticker 기준 최근 통합 분석 이력을 반환합니다."""
+    await _require_auth(request, redis)
+
     repository = IntegratedAnalysisRepositoryImpl(db)
     history = await repository.find_history(ticker, limit=limit)
     return BaseResponse.ok(data=history)

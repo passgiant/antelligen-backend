@@ -1,3 +1,6 @@
+from datetime import datetime
+from typing import Optional
+
 from pydantic import BaseModel
 
 
@@ -10,3 +13,4 @@ class IntegratedAnalysisResponse(BaseModel):
     key_points: list[str]
     sub_results: list[dict]
     execution_time_ms: int
+    created_at: Optional[datetime] = None

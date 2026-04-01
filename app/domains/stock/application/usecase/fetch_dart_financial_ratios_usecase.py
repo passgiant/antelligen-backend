@@ -45,11 +45,18 @@ class FetchDartFinancialRatiosUseCase:
         if fiscal_year is None:
             fiscal_year = str(datetime.now().year - 1)
 
-        # 3. DART API에서 재무비율 조회
+        # 3. DART API에서 재무비율 조회 (없으면 전년도 재시도)
         ratios = await self._dart_provider.fetch_financial_ratios(
             corp_code=mapping.corp_code,
             fiscal_year=fiscal_year,
         )
+
+        if ratios is None:
+            prev_year = str(int(fiscal_year) - 1)
+            ratios = await self._dart_provider.fetch_financial_ratios(
+                corp_code=mapping.corp_code,
+                fiscal_year=prev_year,
+            )
 
         if ratios is None:
             return None

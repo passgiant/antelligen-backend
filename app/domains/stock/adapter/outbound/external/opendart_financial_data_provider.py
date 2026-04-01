@@ -62,11 +62,10 @@ class OpenDartFinancialDataProvider(DartFinancialDataProvider):
                         response.raise_for_status()
                         data = response.json()
                     if data.get("status") != "000":
-                        logger.warning(
-                            "[DART] 재무제표 조회 실패: corp_code=%s, status=%s, message=%s",
+                        logger.info(
+                            "[DART] 재무제표 없음 (CFS·OFS 모두): corp_code=%s, status=%s",
                             corp_code,
                             data.get("status"),
-                            data.get("message"),
                         )
                         return None
                 else:

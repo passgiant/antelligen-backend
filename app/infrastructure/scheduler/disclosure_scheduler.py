@@ -8,6 +8,7 @@ from app.infrastructure.scheduler.disclosure_jobs import (
     job_refresh_company_list,
     job_process_documents,
     job_cleanup_expired_data,
+    job_collect_news,
     job_seasonal_quarterly,
     job_seasonal_semiannual,
     job_seasonal_annual,
@@ -65,6 +66,16 @@ def create_disclosure_scheduler() -> AsyncIOScheduler:
         misfire_grace_time=600,
     )
 
+    # Daily 06:00 KST — collect news from Naver API
+    scheduler.add_job(
+        job_collect_news,
+        trigger=CronTrigger(hour=6, minute=0, timezone=KST),
+        id="collect_news",
+        name="Collect Naver news",
+        replace_existing=True,
+        misfire_grace_time=600,
+    )
+
     # -- Seasonal report collection --
 
     # Quarterly report (A003): Mar, May, Aug, Nov 15th at 04:00 KST
@@ -97,5 +108,5 @@ def create_disclosure_scheduler() -> AsyncIOScheduler:
         misfire_grace_time=3600,
     )
 
-    logger.info("Disclosure scheduler configured (7 jobs: 1 hourly, 3 daily, 3 seasonal)")
+    logger.info("Disclosure scheduler configured (8 jobs: 1 hourly, 4 daily, 3 seasonal)")
     return scheduler

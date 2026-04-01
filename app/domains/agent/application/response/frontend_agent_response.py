@@ -33,7 +33,7 @@ class FrontendAgentResponse(BaseModel):
             FrontendAgentResultItem(
                 agent_name=r.agent_name,
                 status=r.status.value,
-                data=r.data,
+                data={k: v for k, v in r.data.items() if k != "retrieved_chunks"} if r.data else None,
                 error_message=r.error_message,
                 execution_time_ms=r.execution_time_ms,
                 signal=r.signal.value if r.signal else None,

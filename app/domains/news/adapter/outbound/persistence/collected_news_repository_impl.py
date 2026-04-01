@@ -1,4 +1,5 @@
 import hashlib
+from datetime import datetime, timedelta
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -35,3 +36,9 @@ class CollectedNewsRepositoryImpl(CollectedNewsRepositoryPort):
         )
         result = await self._db.execute(stmt)
         return [CollectedNewsMapper.to_entity(orm) for orm in result.scalars().all()]
+
+    async def has_recent_news(self, within_seconds: int) -> bool:
+        cutoff = datetime.now() - timedelta(seconds=within_seconds)
+        stmt = select(CollectedNewsOrm.id).where(CollectedNewsOrm.collected_at >= cutoff).limit(1)
+        result = await self._db.execute(stmt)
+        return result.scalar_one_or_none() is not None

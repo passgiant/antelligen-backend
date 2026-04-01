@@ -92,6 +92,8 @@ async def request_access_token_after_redirection(
                 httponly=True,
                 path="/",
                 max_age=settings.session_ttl_seconds,
+                samesite="none",
+                secure=False,
             )
             return response
 

@@ -3,6 +3,7 @@ import time as _time
 from datetime import datetime, timedelta
 
 from app.infrastructure.database.database import AsyncSessionLocal
+from app.infrastructure.database.vector_database import VectorAsyncSessionLocal
 from app.infrastructure.cache.redis_client import redis_client
 
 logger = logging.getLogger(__name__)
@@ -412,6 +413,38 @@ async def _run_seasonal_collect(pblntf_ty: str, report_name: str, months_back: i
     except Exception as e:
         elapsed = _time.monotonic() - start
         logger.error("[Scheduler][SeasonalCollect] %s (%s) failed after %.1fs: %s", report_name, pblntf_ty, elapsed, str(e))
+
+
+async def job_collect_news():
+    """Daily 06:00: collect news from Naver API and store in vector DB."""
+    from app.domains.news.adapter.outbound.external.naver_news_client import NaverNewsClient
+    from app.domains.news.adapter.outbound.persistence.collected_news_repository_impl import CollectedNewsRepositoryImpl
+    from app.domains.news.application.usecase.collect_naver_news_usecase import CollectNaverNewsUseCase
+    from app.infrastructure.config.settings import get_settings
+
+    start = _time.monotonic()
+    logger.info("[Scheduler][CollectNews] Starting Naver news collection")
+    try:
+        settings = get_settings()
+        async with VectorAsyncSessionLocal() as db:
+            repository = CollectedNewsRepositoryImpl(db)
+            if await repository.has_recent_news(within_seconds=86400):
+                logger.info("[Scheduler][CollectNews] Recent news found (within 24h) — skipping bootstrap")
+                return
+            usecase = CollectNaverNewsUseCase(
+                naver_news_port=NaverNewsClient(
+                    client_id=settings.naver_client_id,
+                    client_secret=settings.naver_client_secret,
+                ),
+                repository=repository,
+            )
+            result = await usecase.execute()
+            elapsed = _time.monotonic() - start
+            logger.info("[Scheduler][CollectNews] Complete — collected=%d, skipped=%d (%.1fs)",
+                        result.total_collected, result.skipped_duplicates, elapsed)
+    except Exception as e:
+        elapsed = _time.monotonic() - start
+        logger.error("[Scheduler][CollectNews] Failed after %.1fs: %s", elapsed, str(e))
 
 
 async def job_seasonal_quarterly():

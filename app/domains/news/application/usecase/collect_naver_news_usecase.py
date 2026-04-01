@@ -1,3 +1,5 @@
+from typing import Optional
+
 from app.domains.news.application.port.collected_news_repository_port import CollectedNewsRepositoryPort
 from app.domains.news.application.port.naver_news_search_port import NaverNewsSearchPort
 from app.domains.news.application.response.collect_naver_news_response import (
@@ -8,6 +10,7 @@ from app.domains.news.application.response.collect_naver_news_response import (
 COLLECTION_KEYWORDS = [
     "코스피", "코스닥", "삼성전자", "SK하이닉스", "현대차",
     "금리", "환율", "반도체", "2차전지", "AI",
+    "네이버", "카카오", "셀트리온", "삼성바이오로직스", "포스코",
 ]
 
 
@@ -20,11 +23,11 @@ class CollectNaverNewsUseCase:
         self._naver_news_port = naver_news_port
         self._repository = repository
 
-    async def execute(self) -> CollectNaverNewsResponse:
+    async def execute(self, keywords: Optional[list[str]] = None) -> CollectNaverNewsResponse:
         collected: list[CollectedNewsItemResponse] = []
         skipped = 0
 
-        for keyword in COLLECTION_KEYWORDS:
+        for keyword in (keywords or COLLECTION_KEYWORDS):
             for page in range(10):  # 100개 × 10페이지 = 키워드당 최대 1000건
                 start = page * 100 + 1
                 articles = await self._naver_news_port.search(keyword=keyword, display=100, start=start)

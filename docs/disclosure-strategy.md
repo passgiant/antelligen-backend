@@ -687,3 +687,46 @@ pykrx는 제거됨. 시가총액 조회는 네이버 금융 API로 대체.
 
 컨테이너 이미지에 패키지가 포함되지 않아서 재시작 시 매번 설치 필요.
 Dockerfile에 `RUN pip install -r requirements.txt`를 추가하거나 실행 스크립트에 포함.
+
+---
+
+## 13. 개선 이력
+
+### RAG 검색 쿼리 개선
+
+**파일**: `app/domains/disclosure/application/usecase/analysis_agent_graph.py`
+
+**문제**: `_build_analysis_query()`가 `corp_code`를 단순 연결하는 방식이어서 임베딩 검색에 의미 있는 쿼리가 생성되지 않았음.
+
+**변경 전**:
+```python
+parts = [f"corp_code {corp_code} disclosure analysis"]
+if event_disclosures:
+    parts.append(" ".join(d.report_nm for d in event_disclosures[:5]))
+```
+
+**변경 후**:
+```python
+base = f"{ticker} 사업현황 위험요소 성장전략 경영실적 주요사업"
+if event_disclosures:
+    events_text = " ".join(d.report_nm for d in event_disclosures[:3])
+    return f"{base} {events_text}"
+return base
+```
+
+**효과**: RAG 청크 검색 정확도 향상 → 공시 에이전트 처리 시간 20초 → 7~8초로 단축, confidence 개선.
+
+---
+
+### LLM 프롬프트 confidence 기준 완화
+
+**파일**: `app/domains/disclosure/domain/service/analysis_prompt_builder.py`
+
+**문제**: 프롬프트에 "RAG 자료가 부족하면 confidence 0.5 이하" 지침이 있었으나, 공시 RAG는 재무 수치가 아닌 사업 현황·위험 요소 등 정성적 내용을 담고 있어 불필요하게 낮은 confidence가 생성되었음.
+
+**변경 내용**: 해당 지침 제거 후 아래 내용으로 대체:
+```
+RAG 자료에 재무 수치가 없더라도 사업 내용, 위험 요소, 전략 정보가 있으면 confidence 0.6 이상 가능
+```
+
+**효과**: confidence 0.4 → 0.75로 개선, key_points 2개 → 3개로 정상화.

@@ -70,4 +70,5 @@ class IntegratedAnalysisRepositoryImpl(IntegratedAnalysisRepositoryPort):
             key_points=row.key_points,
             sub_results=row.sub_results,
             execution_time_ms=row.execution_time_ms,
+            created_at=row.created_at,
         )
