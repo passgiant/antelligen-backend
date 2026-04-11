@@ -19,11 +19,13 @@ from app.common.exception.global_exception_handler import register_exception_han
 from app.infrastructure.config.settings import Settings, get_settings
 from app.infrastructure.config.logging_config import setup_logging
 from app.infrastructure.config.langsmith_config import configure_langsmith
-from app.infrastructure.database.database import AsyncSessionLocal, Base, engine
+from app.infrastructure.database.database import AsyncSessionLocal, Base, engine, check_db_health
 from app.infrastructure.database.vector_database import VectorBase, vector_engine
 
 import app.domains.account.infrastructure.orm.account_orm  # noqa: F401
 import app.domains.news.infrastructure.orm.saved_article_orm  # noqa: F401
+import app.domains.news.infrastructure.orm.user_saved_article_orm  # noqa: F401
+import app.domains.news.infrastructure.orm.article_content_orm  # noqa: F401
 import app.domains.board.infrastructure.orm.board_orm  # noqa: F401
 import app.domains.post.infrastructure.orm.post_orm  # noqa: F401
 import app.domains.stock.infrastructure.orm.stock_vector_document_orm  # noqa: F401
@@ -46,6 +48,9 @@ settings: Settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
+    if not await check_db_health():
+        raise RuntimeError("PostgreSQL 연결 실패 — 서버를 시작할 수 없습니다.")
+
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
@@ -86,8 +91,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=[settings.cors_allowed_frontend_url],
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization", "Cookie", "Set-Cookie"],
 )
 
 app.include_router(api_v1_router)
