@@ -19,7 +19,7 @@ from app.common.exception.global_exception_handler import register_exception_han
 from app.infrastructure.config.settings import Settings, get_settings
 from app.infrastructure.config.logging_config import setup_logging
 from app.infrastructure.config.langsmith_config import configure_langsmith
-from app.infrastructure.database.database import AsyncSessionLocal, Base, engine
+from app.infrastructure.database.database import AsyncSessionLocal, Base, engine, check_db_health
 from app.infrastructure.database.vector_database import VectorBase, vector_engine
 
 import app.domains.account.infrastructure.orm.account_orm  # noqa: F401
@@ -46,6 +46,9 @@ settings: Settings = get_settings()
 
 @asynccontextmanager
 async def lifespan(application: FastAPI):
+    if not await check_db_health():
+        raise RuntimeError("PostgreSQL 연결 실패 — 서버를 시작할 수 없습니다.")
+
     async with engine.begin() as conn:
         await conn.execute(text("CREATE EXTENSION IF NOT EXISTS vector"))
         await conn.run_sync(Base.metadata.create_all)
